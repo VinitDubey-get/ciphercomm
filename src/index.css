@@ -1,0 +1,112 @@
+/* --- Base Spy-Tech Theme --- */
+body {
+  background-color: #0d1117;
+  color: #c9d1d9;
+  font-family: 'Courier New', Courier, monospace;
+  margin: 0;
+  padding: 20px;
+}
+
+input, button {
+  background-color: #010409;
+  color: #00ff00; /* Green text */
+  border: 1px solid #00ff00; /* Green border */
+  padding: 10px;
+  font-family: inherit;
+  margin: 5px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #00ff00; /* Green background */
+  color: #010409; /* Dark text */
+}
+
+input {
+  color: #c9d1d9; /* Lighter text for inputs */
+}
+
+/* --- App Layout --- */
+.app-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* --- Login Screen --- */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 80vh;
+  text-align: center;
+}
+.login-container h1 {
+  color: #00ff00;
+  text-shadow: 0 0 5px #00ff00;
+}
+
+/* --- Chat Layout --- */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  border: 1px solid #00ff00;
+}
+
+/* --- Peer Connector --- */
+.peer-connector {
+  padding: 10px;
+  background: #010409;
+  border-bottom: 1px solid #00ff00;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.your-id {
+  font-weight: bold;
+  color: #00ff00;
+}
+
+/* --- Message Window --- */
+.message-window {
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  max-width: 60%;
+  padding: 10px 15px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  word-wrap: break-word;
+}
+
+.message.me {
+  background-color: #00ff00;
+  color: #010409;
+  align-self: flex-end;
+}
+
+.message.them {
+  background-color: #222;
+  color: #c9d1d9;
+  align-self: flex-start;
+  border: 1px solid #333;
+}
+
+/* --- Message Input --- */
+.message-input {
+  display: flex;
+  padding: 10px;
+  border-top: 1px solid #00ff00;
+}
+.message-input input {
+  flex-grow: 1;
+}
