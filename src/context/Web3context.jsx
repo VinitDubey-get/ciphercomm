@@ -26,24 +26,33 @@ export function Web3Provider({children}){
     });
      
   
-    useEffect(()=>{
-      const signer = web3Data.signer;
-      if (!signer) {
-        // clear contract when there's no signer
+    useEffect(() => {
+      // Create a contract instance usable for reads (provider) and writes (signer).
+      // This lets receivers (who may not have a signer) still call view functions
+      // such as verifyHash.
+      const signerOrProvider = web3Data.signer || web3Data.provider;
+
+      if (!signerOrProvider) {
+        // clear contract when neither provider nor signer is available
         setWeb3Data(prev => ({ ...prev, contract: null }));
         return;
       }
 
-      const contractInstance = new ethers.Contract(
-        contractAdress,
-        contractABI,
-        signer
-      );
+      try {
+        const contractInstance = new ethers.Contract(
+          contractAdress,
+          contractABI,
+          signerOrProvider
+        );
 
-      setWeb3Data((prev) => ({ ...prev, contract: contractInstance }));
-      console.log('Contract instance created', contractInstance);
+        setWeb3Data((prev) => ({ ...prev, contract: contractInstance }));
+        console.log('Contract instance created (provider/signer)', !!web3Data.signer, contractInstance);
+      } catch (e) {
+        console.error('Failed to create contract instance', e);
+        setWeb3Data(prev => ({ ...prev, contract: null }));
+      }
 
-    },[web3Data.signer])
+    }, [web3Data.signer, web3Data.provider]);
 
     const value={
       ...web3Data,setWeb3Data,

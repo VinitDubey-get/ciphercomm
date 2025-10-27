@@ -6,7 +6,7 @@ import ethCrypto from 'eth-crypto';
 
 function PeerConnector() {
   // 2. Get the peer and peerId from our global bubble
-  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn } = useWeb3();
+  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, chatFinalized } = useWeb3();
   const [friendId, setFriendId] = useState(''); // Local state for the input field
   const [finalizeState, setFinalizeState] = useState({ status: 'idle', info: null });
 
@@ -34,8 +34,75 @@ function PeerConnector() {
         // handle finalize recorded notification from peer
         if (data.type === 'finalize-recorded') {
           console.log('Received finalize-recorded', data.chatHash, data.txHash);
-          // Update local finalized state
-          setWeb3Data(prev => ({ ...prev, chatFinalized: { hash: data.chatHash, txHash: data.txHash, confirmedBy: [prev.address] } }));
+          // compute verification using the latest messages from state (avoid stale closure)
+          setWeb3Data(prev => {
+            try {
+              const localHash = computeChatHash(prev.messages || []);
+              const senderVerified = localHash === data.chatHash;
+              console.log('Computed localHash inside updater', localHash, 'posted', data.chatHash, 'localMatchesSender?', senderVerified);
+
+              // Async on-chain cross-check: use an IIFE because updater cannot be async
+              (async () => {
+                let blockchainVerified = false;
+                try {
+                  if (prev.contract && data.chatHash) {
+                    console.log('Cross-checking hash with blockchain...');
+
+                    // Defensive check: ensure the contract instance has an address and it's valid.
+                    const contractAddress = prev.contract && prev.contract.address;
+                    // prefer an explicit provider on web3Data, fall back to contract.provider or signer.provider
+                    const provider = prev.provider || prev.contract.provider || (prev.contract.signer && prev.contract.signer.provider);
+
+                    if (!contractAddress) {
+                      console.warn('Contract instance has no address; skipping on-chain verify', contractAddress);
+                    } else if (!provider) {
+                      console.warn('No provider available on contract instance or web3Data for on-chain check');
+                    } else if (!ethers.utils.isAddress(contractAddress)) {
+                      console.warn('Contract address is not a valid address, skipping on-chain verify:', contractAddress);
+                    } else {
+                      console.log('Using provider for on-chain check:', provider.connection || provider._network || provider);
+                      const code = await provider.getCode(contractAddress);
+                      if (!code || code === '0x') {
+                        console.warn(`No contract code found at ${contractAddress} on current provider; skipping on-chain verify`);
+                      } else {
+                        // contract.verifyHash(bytes32) returns bool per your Solidity contract
+                        blockchainVerified = await prev.contract.verifyHash(data.chatHash);
+                        console.log('Blockchain verification result:', blockchainVerified);
+                      }
+                    }
+                  } else {
+                    console.warn('No contract/provider available for on-chain check');
+                  }
+                } catch (e) {
+                  // Handle common ethers BAD_DATA decode error when call returns empty data.
+                  console.error('Error reading hash from blockchain:', e);
+                  if (e.code === 'BAD_DATA') {
+                    console.warn('On-chain call returned empty data (likely no contract deployed at address or wrong network). Treating as not verified.');
+                  }
+                }
+
+                const finalVerified = senderVerified && !!blockchainVerified;
+
+                setWeb3Data(currentPrev => ({
+                  ...currentPrev,
+                  chatFinalized: {
+                    hash: data.chatHash,
+                    txHash: data.txHash,
+                    verifiedLocally: senderVerified,
+                    verifiedOnChain: !!blockchainVerified,
+                    verified: finalVerified,
+                    confirmedBy: currentPrev.confirmedBy ? [...currentPrev.confirmedBy] : [currentPrev.address]
+                  }
+                }));
+              })();
+
+              // return previous state immediately; async IIFE will update later
+              return prev;
+            } catch (e) {
+              console.error('Error computing local chat hash during finalize-recorded handling', e);
+              return { ...prev, chatFinalized: { hash: data.chatHash, txHash: data.txHash, verified: false, confirmedBy: [prev.address] } };
+            }
+          });
           return;
         }
 
@@ -54,17 +121,25 @@ function PeerConnector() {
             data.payload
           );
 
-          // add the decrypted message to chat log (no per-message verification)
+          // message metadata should come from the sender so both peers use identical id/ts/sender
+          const now = Date.now();
+          const mid = data.id || now;
+          const mts = data.ts || now;
+          const msender = String(data.sender || '');
+
+          // add the decrypted message to chat log (store encrypted payload)
           const newMessage = {
-            id: Date.now(),
-            sender: 'them',
-            text: decrypted,
+            id: mid,
+            ts: mts,
+            sender: msender,
+            text: decrypted,   // optional for UI
+            payload: data.payload, // store encrypted object for finalize hashing
             verified: false
           };
-          setWeb3Data((prev)=>({
+          setWeb3Data((prev)=>(({
             ...prev,
             messages:[...prev.messages,newMessage]
-          }));
+          })));
         }
       } catch (e) {
         console.error('Decryption or verification error', e);
@@ -149,8 +224,26 @@ function PeerConnector() {
       <div className="your-id">
         {/* 6. Display the REAL Peer ID, or a loading message */}
         Your Peer ID: <strong>{peerId || 'Initializing...'}</strong>
+        {/* show finalize status if available */}
+        {chatFinalized && (
+          <div style={{marginTop:8,fontSize:12}}>
+            <div>Finalized Hash: <code style={{color:'#0f0'}}>{chatFinalized.hash}</code></div>
+            <div>Tx: <a href={`https://sepolia.etherscan.io/tx/${chatFinalized.txHash}`} target="_blank" rel="noreferrer" style={{color:'#0f0'}}>{chatFinalized.txHash}</a></div>
+            <div>
+              Verified (Local):{' '}
+              {typeof chatFinalized.verifiedLocally === 'undefined'
+                ? (chatFinalized.verified === true ? 'Yes' : (chatFinalized.verified === false ? 'No' : 'Checking...'))
+                : (chatFinalized.verifiedLocally ? 'Yes' : 'No')}
+            </div>
+            <div>
+              Verified (On-Chain):{' '}
+              {typeof chatFinalized.verifiedOnChain === 'undefined' ? 'Checking...' : (chatFinalized.verifiedOnChain ? 'Yes' : 'No')}
+            </div>
+            <div>Final Verified: {chatFinalized.verified ? 'Yes' : 'No'}</div>
+          </div>
+        )}
       </div>
-      <div className="friend-id">
+  <div className="friend-id">
         <input 
           type="text" 
           placeholder="Enter Friend's Peer ID" 
@@ -160,6 +253,13 @@ function PeerConnector() {
         <button onClick={connectToPeer}>Connect</button>
         <button onClick={proposeFinalize} style={{marginLeft:'8px'}}>Finalize Chat</button>
       </div>
+      {/* Render chat finalized info */}
+      {/** show chatFinalized from global context if present **/}
+      {(() => {
+        const cf = (typeof window !== 'undefined' && window.__WEB3_DATA__) ? window.__WEB3_DATA__.chatFinalized : null;
+        // fallback: read from messages via context is already handled; instead just render from context
+        return null;
+      })()}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import ethCrypto from 'eth-crypto';
 import { stableStringify } from '../utils/stableStringify.js';
 
 const MessageInput = () => {
-  const { conn, contract, chatKeys, friendPublicKey, setWeb3Data } = useWeb3();
+  const { conn, chatKeys, friendPublicKey, setWeb3Data,contract, address } = useWeb3();
   const [message,setMessage]=useState('');
 
   const handleSendMessage=async()=>{
@@ -20,18 +20,26 @@ const MessageInput = () => {
   const serialized = stableStringify(cipherObj);
   console.log('Sender: serialized cipher', serialized);
 
-      // send encrypted payload to peer
-      conn.send({
+      // include deterministic metadata (id/ts/sender) so both peers compute the same chat hash
+      const now = Date.now();
+      const outgoing = {
         type: 'message',
+        id: now,
+        ts: now,
+        sender: String(address || ''),
         payload: cipherObj
-      });
+      };
+      // send encrypted payload to peer
+      conn.send(outgoing);
 
-      // update local messages UI (no on-chain verification per-message)
+      // update local messages UI (store encrypted payload for finalize hashing)
       const newMessage={
-        id:Date.now(),
-        sender:'me',
-        text:message,
-        verified:false
+        id: now,
+        ts: now,
+        sender: String(address || ''),
+        text:message,       // optional local plaintext copy
+        payload: cipherObj, // encrypted object (essential)
+        verified: false
       };
       setWeb3Data((prev)=>({
         ...prev,
