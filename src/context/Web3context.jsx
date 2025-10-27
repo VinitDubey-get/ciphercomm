@@ -26,31 +26,93 @@ export function Web3Provider({children}){
     });
      
   
+    // initialize provider and signer on mount
     useEffect(() => {
-      // Create a contract instance usable for reads (provider) and writes (signer).
-      // This lets receivers (who may not have a signer) still call view functions
-      // such as verifyHash.
+      (async () => {
+        try {
+          let provider = null;
+          let signer = null;
+          let address = null;
+
+          // Prefer window.ethereum (MetaMask) when available
+          if (typeof window !== 'undefined' && window.ethereum) {
+            try {
+              // ethers v6 BrowserProvider wraps window.ethereum
+              provider = new ethers.BrowserProvider(window.ethereum);
+              // try to get accounts (won't prompt)
+              const accounts = await provider.send('eth_accounts', []);
+              if (accounts && accounts.length > 0) {
+                signer = await provider.getSigner();
+                try { address = await signer.getAddress(); } catch (e) { address = null; }
+              }
+            } catch (e) {
+              console.warn('Failed to init BrowserProvider from window.ethereum, falling back to JsonRpcProvider', e.message || e);
+              provider = null;
+            }
+          }
+
+          // Fall back to a local Ganache JSON-RPC provider if no wallet provider
+          if (!provider) {
+            const rpc = 'http://127.0.0.1:8545';
+            try {
+              provider = new ethers.JsonRpcProvider(rpc);
+              console.log('Initialized read-only provider for RPC:', rpc);
+            } catch (e) {
+              console.error('Failed to create JsonRpcProvider', e);
+              provider = null;
+            }
+          }
+
+          setWeb3Data(prev => ({ ...prev, provider, signer, address }));
+        } catch (e) {
+          console.error('Error initializing provider/signers', e);
+        }
+      })();
+      // run once on mount
+    }, []);
+
+    // create/validate contract instance whenever provider or signer changes
+    useEffect(() => {
       const signerOrProvider = web3Data.signer || web3Data.provider;
 
       if (!signerOrProvider) {
-        // clear contract when neither provider nor signer is available
         setWeb3Data(prev => ({ ...prev, contract: null }));
         return;
       }
 
-      try {
-        const contractInstance = new ethers.Contract(
-          contractAdress,
-          contractABI,
-          signerOrProvider
-        );
-
-        setWeb3Data((prev) => ({ ...prev, contract: contractInstance }));
-        console.log('Contract instance created (provider/signer)', !!web3Data.signer, contractInstance);
-      } catch (e) {
-        console.error('Failed to create contract instance', e);
+      // validate contract address
+      if (!contractAdress || (typeof ethers.isAddress === 'function' ? !ethers.isAddress(contractAdress) : !ethers.utils.isAddress(contractAdress))) {
+        console.warn('Configured contract address is not a valid address:', contractAdress);
         setWeb3Data(prev => ({ ...prev, contract: null }));
+        return;
       }
+
+      (async () => {
+        try {
+          // pick a provider to run read-only checks
+          const providerForChecks = web3Data.provider || (web3Data.signer && web3Data.signer.provider) || (signerOrProvider.provider ? signerOrProvider.provider : signerOrProvider);
+
+          if (providerForChecks) {
+            try {
+              const code = await providerForChecks.getCode(contractAdress);
+              if (!code || code === '0x') {
+                console.warn('No contract bytecode found at configured address on current provider:', contractAdress);
+                setWeb3Data(prev => ({ ...prev, contract: null }));
+                return;
+              }
+            } catch (e) {
+              console.warn('Failed to getCode for contract address (continuing to create contract instance):', e.message || e);
+            }
+          }
+
+          const contractInstance = new ethers.Contract(contractAdress, contractABI, signerOrProvider);
+          setWeb3Data((prev) => ({ ...prev, contract: contractInstance }));
+          console.log('Contract instance created (provider/signer). address=', contractInstance.address, 'usingSigner=', !!web3Data.signer);
+        } catch (e) {
+          console.error('Failed to create contract instance', e);
+          setWeb3Data(prev => ({ ...prev, contract: null }));
+        }
+      })();
 
     }, [web3Data.signer, web3Data.provider]);
 
