@@ -2,13 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useWeb3 } from '../context/Web3context';
 import { computeChatHash } from '../utils/chatHash.js';
 import { ethers } from 'ethers';
-import { contractAdress, contractABI } from '../config';
+import { contractAdress, contractABI, peerRegistryAddress, peerRegistryABI } from '../config';
 import ethCrypto from 'eth-crypto';
+import { registerPeerId, getPeerIdWithFallback } from '../utils/peerOnchain';
 
 function PeerConnector() {
   // 2. Get the peer and peerId from our global bubble
-  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, chatFinalized } = useWeb3();
+  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, chatFinalized, signer, provider, _readRegistry } = useWeb3();
   const [friendId, setFriendId] = useState(''); // Local state for the input field
+  const [status, setStatus] = useState('idle');
+  const [resolvedByWallet, setResolvedByWallet] = useState('');
+  const [friendWallet, setFriendWallet] = useState('');
   const [finalizeState, setFinalizeState] = useState({ status: 'idle', info: null });
 
 
@@ -152,12 +156,65 @@ function PeerConnector() {
   // for outgoing connections
   const connectToPeer = () => {
     if (!peer) return alert('Peer is not initialized!');
-    if (!friendId) return alert('Please enter a Friend Id');
+    const idToUse = friendId || resolvedByWallet;
+    if (!idToUse) return alert('Please enter a Friend Peer ID or resolve by wallet first');
 
-    console.log(`Connecting to peer:${friendId}`);
+    console.log(`Connecting to peer:${idToUse}`);
 
-    const newConn = peer.connect(friendId);
+    const newConn = peer.connect(idToUse);
     setupConnection(newConn);
+  };
+
+  const copyMyAddress = async () => {
+    if (!address) return alert('Connect your wallet first');
+    try {
+      await navigator.clipboard.writeText(address);
+      alert('Your wallet address copied to clipboard');
+    } catch (e) {
+      console.error('copy failed', e);
+      alert('Failed to copy address; please copy manually: ' + address);
+    }
+  };
+
+  const doRegister = async () => {
+    if (!signer) return alert('Connect your wallet (signer) to register on-chain');
+    if (!peerId) return alert('PeerJS id not ready yet');
+    setStatus('registering');
+    try {
+      const res = await registerPeerId(signer, peerId);
+      console.log('registerPeerId result', res);
+      if (res && res.status === 'ok') {
+        alert('Peer ID registered on-chain: ' + res.txHash);
+      } else if (res && res.status === 'already') {
+        alert('Peer ID already registered');
+      }
+      setStatus('idle');
+    } catch (e) {
+      console.error('register failed', e);
+      alert('Registration failed: ' + (e && e.message ? e.message : e));
+      setStatus('idle');
+    }
+  };
+
+  const resolveByWallet = async () => {
+    if (!friendWallet) return alert('Enter friend wallet address');
+    setStatus('resolving');
+    try {
+      const addr = ethers.getAddress(friendWallet);
+      const providerForLookup = provider || (typeof window !== 'undefined' && window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
+      const readReg = _readRegistry || (providerForLookup ? new ethers.Contract(peerRegistryAddress, peerRegistryABI, providerForLookup) : null);
+      const id = await getPeerIdWithFallback(providerForLookup, readReg, addr, { lookbackBlocks: 50000 });
+      if (id) {
+        setResolvedByWallet(id);
+        alert('Resolved Peer ID: ' + id);
+      } else {
+        alert('No peerId found on-chain for that wallet');
+      }
+    } catch (e) {
+      console.error('resolve failed', e);
+      alert('Resolve failed: ' + (e && e.message ? e.message : e));
+    }
+    setStatus('idle');
   };
 
   const proposeFinalize = async () => {
@@ -238,16 +295,41 @@ function PeerConnector() {
         )}
       </div>
       <div className="friend-id">
-        <input
-          type="text"
-          placeholder="Enter Friend's Peer ID"
-          value={friendId}
-          onChange={(e) => setFriendId(e.target.value)}
-        />
-        <button onClick={connectToPeer}>Connect</button>
-        <button onClick={proposeFinalize} style={{ marginLeft: '8px' }}>
-          Finalize Chat
-        </button>
+        <div style={{ marginBottom: 8 }}>
+          <button onClick={copyMyAddress} disabled={!address}>Copy my wallet address</button>
+          <button onClick={doRegister} disabled={!peerId || !signer} style={{ marginLeft: 8 }}>{status === 'registering' ? 'Registering...' : 'Register my Peer ID on-chain'}</button>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block' }}>Resolve by Friend's Wallet Address:</label>
+          <input
+            type="text"
+            placeholder="0x friend's wallet address"
+            value={friendWallet}
+            onChange={(e) => setFriendWallet(e.target.value)}
+            style={{ width: 360 }}
+          />
+          <button onClick={resolveByWallet} disabled={!friendWallet} style={{ marginLeft: 8 }}>{status === 'resolving' ? 'Resolving...' : 'Resolve'}</button>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <label>Or paste Friend's Peer ID directly:</label>
+          <input
+            type="text"
+            placeholder="Enter PeerJS id"
+            value={friendId}
+            onChange={(e) => setFriendId(e.target.value)}
+            style={{ width: 360 }}
+          />
+        </div>
+
+        <div>
+          <div>Resolved Peer ID: <code>{resolvedByWallet || '(none)'}</code></div>
+          <button onClick={connectToPeer} style={{ marginTop: 8 }}>Connect</button>
+          <button onClick={proposeFinalize} style={{ marginLeft: '8px' }}>
+            Finalize Chat
+          </button>
+        </div>
       </div>
       {/* Render chat finalized info */}
       {/** show chatFinalized from global context if present **/}

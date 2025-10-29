@@ -1,4 +1,4 @@
-export const contractAdress="0x798fa4dE2180C04dF3732EFc8A5A96Fa436823F0"
+export const contractAdress="0x40FaEB91f6462e9c7b891068C2aB204682000402"
 
 export const contractABI=
    [
@@ -67,6 +67,89 @@ export const contractABI=
 				"internalType": "bool",
 				"name": "",
 				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]
+
+// Peer Registry contract (used to map wallet address -> PeerJS ID)
+// Replace the address below with your deployed PeerRegistry address if different
+export const peerRegistryAddress = "0xBEc9e87A80598eDeF8881B7E9b15870934577422";
+
+export const peerRegistryABI =[
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "peerId",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "updatedAt",
+				"type": "uint256"
+			}
+		],
+		"name": "PeerIdUpdated",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "_peerId",
+				"type": "string"
+			}
+		],
+		"name": "registerPeerId",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "getPeerId",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "peerId",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "getPeerUpdatedAt",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",

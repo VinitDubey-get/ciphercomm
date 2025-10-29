@@ -1,6 +1,6 @@
 import React, {createContext,useContext,useState,useEffect} from 'react';
 import {ethers} from 'ethers';
-import { contractAdress,contractABI } from '../config';
+import { contractAdress,contractABI, peerRegistryAddress, peerRegistryABI } from '../config';
 
 
 // creating the context 
@@ -22,6 +22,9 @@ export function Web3Provider({children}){
       friendPublicKey:null,
       messages:[],
       contract:null,
+      registryContract: null,
+      _readRegistry: null,
+      providerForReadonly: null,
       chatFinalized: null, // { hash, txHash, confirmedBy: [addresses] }
     });
      
@@ -106,7 +109,19 @@ export function Web3Provider({children}){
           }
 
           const contractInstance = new ethers.Contract(contractAdress, contractABI, signerOrProvider);
-          setWeb3Data((prev) => ({ ...prev, contract: contractInstance }));
+
+          // Create read-only registry instance (attached to a provider) and signer-connected registry if signer available
+          const readProvider = web3Data.provider || (web3Data.signer && web3Data.signer.provider) || (signerOrProvider.provider ? signerOrProvider.provider : signerOrProvider);
+          const readRegistryInstance = (peerRegistryAddress && readProvider) ? new ethers.Contract(peerRegistryAddress, peerRegistryABI, readProvider) : null;
+          let registryInstance = null;
+          try {
+            registryInstance = readRegistryInstance && web3Data.signer ? readRegistryInstance.connect(web3Data.signer) : readRegistryInstance;
+          } catch (e) {
+            console.warn('Failed to connect registry to signer (will use read-only):', e && e.message ? e.message : e);
+            registryInstance = readRegistryInstance;
+          }
+
+          setWeb3Data((prev) => ({ ...prev, contract: contractInstance, registryContract: registryInstance, _readRegistry: readRegistryInstance, providerForReadonly: readProvider }));
           console.log('Contract instance created (provider/signer). address=', contractInstance.address, 'usingSigner=', !!web3Data.signer);
         } catch (e) {
           console.error('Failed to create contract instance', e);
@@ -115,6 +130,50 @@ export function Web3Provider({children}){
       })();
 
     }, [web3Data.signer, web3Data.provider]);
+
+    // Expose helpers on window for easier debugging in the browser console.
+    // We set these whenever web3Data changes so console calls work interactively.
+    useEffect(() => {
+      try {
+        if (typeof window !== 'undefined') {
+          // expose ethers for console convenience
+          window.ethers = ethers;
+          // expose registry ABI/address for manual inspection
+          window.__PEER_REGISTRY_ABI__ = peerRegistryABI;
+          window.__PEER_REGISTRY_ADDRESS__ = peerRegistryAddress;
+
+          // create a debug helper that uses the current provider/registry to perform an eth_call
+          window.__debugCallGetPeerId = async (targetAddress) => {
+            try {
+              const provider = web3Data.provider || (web3Data.signer && web3Data.signer.provider) || (web3Data._readRegistry && web3Data._readRegistry.provider) || null;
+              const readReg = web3Data._readRegistry || null;
+              if (!provider && !readReg) {
+                throw new Error('No provider or readRegistry available in web3 context');
+              }
+
+              const iface = new ethers.Interface(peerRegistryABI);
+              const calldata = iface.encodeFunctionData('getPeerId', [targetAddress]);
+              const prov = provider || (readReg && readReg.provider);
+              if (!prov || typeof prov.send !== 'function') {
+                throw new Error('Provider does not support send(eth_call)');
+              }
+              const raw = await prov.send('eth_call', [{ to: peerRegistryAddress, data: calldata }, 'latest']);
+              // attempt decode
+              try {
+                const decoded = iface.decodeFunctionResult('getPeerId', raw);
+                return { raw, decoded };
+              } catch (decErr) {
+                return { raw, decodeError: decErr && decErr.message ? decErr.message : String(decErr) };
+              }
+            } catch (e) {
+              return { error: e && e.message ? e.message : e };
+            }
+          };
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, [web3Data, peerRegistryABI, peerRegistryAddress]);
 
     const value={
       ...web3Data,setWeb3Data,
