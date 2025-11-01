@@ -1,4 +1,4 @@
-export const contractAdress="0xd4EB75FF78Af11242F0515cb54901B41096bfCB9"
+export const contractAdress="0xEd716a57f4c341Dc18007812D3B2ecD0541ca3a6"
 
 export const contractABI=
  [
@@ -75,7 +75,7 @@ export const contractABI=
 ]
 // Peer Registry contract (used to map wallet address -> PeerJS ID)
 // Replace the address below with your deployed PeerRegistry address if different
-export const peerRegistryAddress = "0x665fECB55f973E7AE5c67AeD342eCA48B34732B2";
+export const peerRegistryAddress = "0xb6827Ef7Cf19aDde0427d5920C22a8CD63EE0502";
 
 export const peerRegistryABI =[
 	{

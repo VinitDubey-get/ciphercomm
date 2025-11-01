@@ -1,6 +1,7 @@
 import React from 'react'
 import {ethers} from 'ethers';
 import { useWeb3 } from '../context/Web3context';
+import logo from '../assets/logo.svg';
 
 const Login = () => {
 
@@ -38,9 +39,10 @@ const Login = () => {
 
   return (
     <div className='login-container'>
-      <h1>CipherComm</h1>
+      <img src={logo} alt="CipherComm logo" className="logo" />
+      <h1 className="title">CipherComm</h1>
       <p>A decentralized, E2EE chat App</p>
-      {/* this button is non-functional for day 1 */}
+      {/* Connect wallet button */}
       <button onClick={connectWallet}>Connect MetaMask</button>
     </div>
   )

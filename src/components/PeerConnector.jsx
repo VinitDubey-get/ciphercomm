@@ -9,11 +9,11 @@ import { handleIncomingFile } from '../utils/fileTransfer.js';
 
 function PeerConnector() {
   // 2. Get the peer and peerId from our global bubble
-  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, chatFinalized, signer, provider, _readRegistry, pinata, uploadToIpfs } = useWeb3();
+  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, friendWallet, chatFinalized, signer, provider, _readRegistry, pinata, uploadToIpfs } = useWeb3();
   const [friendId, setFriendId] = useState(''); // Local state for the input field
   const [status, setStatus] = useState('idle');
   const [resolvedByWallet, setResolvedByWallet] = useState('');
-  const [friendWallet, setFriendWallet] = useState('');
+  const [friendWalletInput, setFriendWalletInput] = useState('');
   const [finalizeState, setFinalizeState] = useState({ status: 'idle', info: null });
 
 
@@ -29,6 +29,12 @@ function PeerConnector() {
         type: 'key-exchange',
         payload: chatKeys.publicKey,
       });
+      // send an intro so peers know each other's wallet addresses (helpful UX)
+      try {
+        conn.send({ type: 'intro', payload: { address } });
+      } catch (e) {
+        console.warn('Failed to send intro payload', e);
+      }
     });
 
     // receiver handling incoming data
@@ -97,6 +103,10 @@ function PeerConnector() {
               })();
 
               // return previous state immediately; async IIFE will update later
+              // Close the connection because sender finalized the chat, and clear messages so app returns to pre-connection state
+              try { conn && typeof conn.close === 'function' && conn.close(); } catch (e) { console.warn('Error closing connection after finalize-recorded', e); }
+              // clear peer-related state and messages (keep chatFinalized which the async IIFE will set/augment)
+              setWeb3Data((p) => ({ ...p, conn: null, friendPublicKey: null, friendWallet: null, messages: [] }));
               return prev;
             } catch (e) {
               console.error('Error computing local chat hash during finalize-recorded handling', e);
@@ -112,6 +122,16 @@ function PeerConnector() {
 
           // save it to our global state
           setWeb3Data((prev) => ({ ...prev, friendPublicKey: data.payload }));
+        } else if (data.type === 'intro') {
+          // peer shared their wallet address
+          try {
+            const peerAddr = data.payload && data.payload.address ? String(data.payload.address) : null;
+            if (peerAddr) {
+              setWeb3Data((prev) => ({ ...prev, friendWallet: peerAddr }));
+            }
+          } catch (e) {
+            console.warn('Failed to process intro payload', e);
+          }
         } else if (data.type === 'message') {
           console.log('Received encrypted message', data);
 
@@ -154,7 +174,7 @@ function PeerConnector() {
     // hadling the connection closing
     conn.on('close', () => {
       console.log('Connection Closed');
-      setWeb3Data((prev) => ({ ...prev, conn: null, friendPublicKey: null }));
+      setWeb3Data((prev) => ({ ...prev, conn: null, friendPublicKey: null, friendWallet: null }));
     });
     // handle connection errors
     conn.on('error', (err) => {
@@ -172,6 +192,11 @@ function PeerConnector() {
 
     const newConn = peer.connect(idToUse);
     setupConnection(newConn);
+  };
+
+  const shortAddr = (a) => {
+    if (!a) return '';
+    try { const s = String(a); return s.length > 12 ? `${s.slice(0,6)}...${s.slice(-4)}` : s; } catch(e) { return a; }
   };
 
   const copyMyAddress = async () => {
@@ -206,10 +231,10 @@ function PeerConnector() {
   };
 
   const resolveByWallet = async () => {
-    if (!friendWallet) return alert('Enter friend wallet address');
+    if (!friendWalletInput) return alert('Enter friend wallet address');
     setStatus('resolving');
     try {
-      const addr = ethers.getAddress(friendWallet);
+  const addr = ethers.getAddress(friendWalletInput);
       const providerForLookup = provider || (typeof window !== 'undefined' && window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
       const readReg = _readRegistry || (providerForLookup ? new ethers.Contract(peerRegistryAddress, peerRegistryABI, providerForLookup) : null);
       const id = await getPeerIdWithFallback(providerForLookup, readReg, addr, { lookbackBlocks: 50000 });
@@ -236,12 +261,15 @@ function PeerConnector() {
       const tx = await contract.recordHash(chatHash);
       console.log('Finalize: transaction sent', tx.hash);
       await tx.wait();
-      console.log('Finalize: transaction confirmed', tx.hash);
-      // notify peer that chat was recorded
-      conn.send({ type: 'finalize-recorded', chatHash, txHash: tx.hash });
-      // update local state
-      setWeb3Data((prev) => ({ ...prev, chatFinalized: { hash: chatHash, txHash: tx.hash, confirmedBy: [prev.address] } }));
-      setFinalizeState({ status: 'recorded', info: { hash: chatHash, txHash: tx.hash } });
+  console.log('Finalize: transaction confirmed', tx.hash);
+  // notify peer that chat was recorded
+  try { conn && conn.send({ type: 'finalize-recorded', chatHash, txHash: tx.hash }); } catch (e) { console.warn('Failed to send finalize-recorded', e); }
+
+  // close the data connection and clear peer state and messages so UI returns to pre-connection state
+  try { conn && typeof conn.close === 'function' && conn.close(); } catch (e) { console.warn('Error closing connection after finalize', e); }
+
+  setWeb3Data((prev) => ({ ...prev, chatFinalized: { hash: chatHash, txHash: tx.hash, confirmedBy: [prev.address] }, conn: null, friendPublicKey: null, friendWallet: null, messages: [] }));
+  setFinalizeState({ status: 'recorded', info: { hash: chatHash, txHash: tx.hash } });
     } catch (e) {
       console.error('Finalize: recordHash failed', e);
       setFinalizeState({ status: 'error', info: e.message });
@@ -314,11 +342,11 @@ function PeerConnector() {
           <input
             type="text"
             placeholder="0x friend's wallet address"
-            value={friendWallet}
-            onChange={(e) => setFriendWallet(e.target.value)}
+            value={friendWalletInput}
+            onChange={(e) => setFriendWalletInput(e.target.value)}
             style={{ width: 360 }}
           />
-          <button onClick={resolveByWallet} disabled={!friendWallet} style={{ marginLeft: 8 }}>{status === 'resolving' ? 'Resolving...' : 'Resolve'}</button>
+          <button onClick={resolveByWallet} disabled={!friendWalletInput} style={{ marginLeft: 8 }}>{status === 'resolving' ? 'Resolving...' : 'Resolve'}</button>
         </div>
 
         <div style={{ marginBottom: 8 }}>
@@ -342,11 +370,13 @@ function PeerConnector() {
       </div>
       {/* Render chat finalized info */}
       {/** show chatFinalized from global context if present **/}
-      {(() => {
-        const cf = typeof window !== 'undefined' && window.__WEB3_DATA__ ? window.__WEB3_DATA__.chatFinalized : null;
-        // fallback: read from messages via context is already handled; instead just render from context
-        return null;
-      })()}
+      {/* show connection status pill at the very end of the connector when connected */}
+      {conn && friendWallet && (
+        <div className="status-pill" style={{ marginTop: 12, justifyContent: 'center', display: 'flex', alignItems: 'center' }}>
+          <span className="status-dot connected" style={{ marginRight: 8 }} />
+          <span>Connected to <code style={{ color: 'var(--neon-green)', fontWeight: 700 }}>{shortAddr(friendWallet)}</code></span>
+        </div>
+      )}
     </div>
   );
 }

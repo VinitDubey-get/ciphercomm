@@ -1,29 +1,29 @@
-import React,{useState,useRef} from 'react'
+import React, { useState, useRef } from 'react'
 import { useWeb3 } from '../context/Web3context.jsx';
-import { ethers } from 'ethers';
 import { sendFile } from '../utils/fileTransfer.js';
-import { stableStringify } from '../utils/stableStringify.js';
 import ethCrypto from 'eth-crypto';
+import { stableStringify } from '../utils/stableStringify.js';
 
 const MessageInput = () => {
-  const { conn, chatKeys, friendPublicKey, setWeb3Data, contract, address, pinata, uploadToIpfs } = useWeb3();
-  const [message,setMessage]=useState('');
-  const fileInputRef=useRef(null);
-  const [isUploading,setIsUploading]=useState(false);
+  const { conn, chatKeys, friendPublicKey, setWeb3Data, contract, address, pinata, uploadToIpfs, sendMessage } = useWeb3();
+  const [message, setMessage] = useState('');
+  const fileInputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  const handleSendMessage=async()=>{
-    if(!conn || !contract || !friendPublicKey){
-      return console.warn('Missing conn/contract/friendPublicKey');
+  const handleSendMessage = async () => {
+    if (!message) return;
+    if (!conn || !friendPublicKey) {
+      console.warn('Missing conn or friendPublicKey; cannot send');
+      return;
     }
 
-    try{
-      // create deterministic cipher object
+    try {
+      // encrypt the message with recipient public key
       const cipherObj = await ethCrypto.encryptWithPublicKey(friendPublicKey, message);
-  // keep stringified version for debugging
-  const serialized = stableStringify(cipherObj);
-  console.log('Sender: serialized cipher', serialized);
+      const serialized = stableStringify(cipherObj);
+      console.log('Sender: serialized cipher', serialized);
 
-      // include deterministic metadata (id/ts/sender) so both peers compute the same chat hash
       const now = Date.now();
       const outgoing = {
         type: 'message',
@@ -32,66 +32,76 @@ const MessageInput = () => {
         sender: String(address || ''),
         payload: cipherObj
       };
-      // send encrypted payload to peer
+
+      // send over PeerJS
       conn.send(outgoing);
 
-      // update local messages UI (store encrypted payload for finalize hashing)
-      const newMessage={
+      // optimistic UI update
+      const newMessage = {
         id: now,
         ts: now,
         sender: String(address || ''),
-        text:message,       // optional local plaintext copy
-        payload: cipherObj, // encrypted object (essential)
+        text: message,
+        payload: cipherObj,
         verified: false
       };
-      setWeb3Data((prev)=>({
-        ...prev,
-        messages:[...prev.messages,newMessage]
-      }))
+      setWeb3Data((prev) => ({ ...prev, messages: [...prev.messages, newMessage] }));
       setMessage('');
-    }
-    catch(err){
+    } catch (err) {
       console.error('Send message failed', err);
     }
-   
   }
-  const handleAttachClick = () => {
-  if (isUploading) return;
-   if (!uploadToIpfs && !pinata) return alert('Storage client not configured (check Web3context)');
-   // open native file picker
-   fileInputRef.current && fileInputRef.current.click();
-  };
 
+  const handleAttachClick = () => {
+    if (isUploading) return;
+    if (!uploadToIpfs && !pinata) return alert('Storage client not configured (check Web3context)');
+    fileInputRef.current && fileInputRef.current.click();
+  };
 
   const handleFileChange = async (ev) => {
     const file = ev?.target?.files?.[0];
-  if (!file) return;
-  if (!conn) { alert('You are not connected to a peer.'); return; }
-  if (!uploadToIpfs && !pinata) { alert('Storage client not available.'); return; }
+    if (!file) return;
+    if (!conn) { alert('You are not connected to a peer.'); return; }
+    if (!uploadToIpfs && !pinata) { alert('Storage client not available.'); return; }
 
     setIsUploading(true);
+    setUploadProgress(6);
     try {
-  await sendFile({ file, conn, uploadToIpfs: uploadToIpfs || (pinata ? (f, name) => pinata.pinFileToIPFS(f, { pinataMetadata: { name } }) : null), friendPublicKey, setWeb3Data, address });
+      const uploadHelper = uploadToIpfs || (pinata ? (f, name) => pinata.pinFileToIPFS(f, { pinataMetadata: { name } }) : null);
+      await sendFile({ file, conn, uploadToIpfs: uploadHelper, friendPublicKey, setWeb3Data, address, progressCb: (p) => setUploadProgress(p) });
+      setUploadProgress(100);
+      setTimeout(() => setUploadProgress(0), 650);
     } catch (err) {
       console.error('File upload failed', err);
       alert('File upload failed: ' + (err.message || err));
+      setUploadProgress(0);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
       setIsUploading(false);
     }
   };
 
-
   return (
-    <div className='message-input'>
-      <input type="text" placeholder='Type your encrypted message....'  value={message} onChange={(e)=>setMessage(e.target.value)}
-       onKeyDown={(e)=>e.key=='Enter' &&handleSendMessage()}
-      />
-      <button onClick={handleSendMessage}>Send</button>
+    <div className="composer">
+      <button className="attach-btn" aria-label="Attach file" title="Attach file" onClick={handleAttachClick}>
+        {/* paperclip / attachment icon */}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M21.44 11.05l-8.49 8.49a4.5 4.5 0 0 1-6.36-6.36l8.49-8.49a3.25 3.25 0 1 1 4.6 4.6l-8.49 8.49a1.5 1.5 0 0 1-2.12-2.12l7.07-7.07" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
 
-      <button onClick={handleAttachClick} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Attach File'}</button>
-      {/* hidden native file input */}
-      <input ref={fileInputRef} type="file" onChange={handleFileChange} style={{ display: 'none' }} />
+      <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} />
+
+      <div className="input">
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Type a message or drop a file..." onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} style={{ width: '100%', minHeight: 44, background: 'transparent', border: 0, color: 'inherit', resize: 'none' }} />
+        {uploadProgress > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div className="progress"><i style={{ width: `${uploadProgress}%` }} /></div>
+          </div>
+        )}
+      </div>
+
+      <button className="btn primary" onClick={handleSendMessage} aria-label="Send message">Send</button>
     </div>
   )
 }

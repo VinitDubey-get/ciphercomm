@@ -1,0 +1,198 @@
+/* Import Google font fallback - must come before other rules for PostCSS/Vite */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+
+:root{
+  /* Spy-tech palette */
+  --bg: #01030a; /* deep black-blue */
+  --neon-cyan: #00fff7;
+  --neon-green: #14ff00;
+  --accent-magenta: #ff00e6;
+  --warn-amber: #ffae00;
+  --text: #bdfcff;
+  --glass: rgba(10,20,30,0.6);
+  --panel-glow: 0 0 18px #00fff733, inset 0 0 6px #001;
+  --radius: 12px;
+  --mono: 'Share Tech Mono', 'Orbitron', ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 10% 10%, rgba(0,255,247,0.03), transparent 10%),
+              radial-gradient(800px 400px at 90% 90%, rgba(20,255,0,0.02), transparent 8%),
+              var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* subtle scanline / overlay */
+body::before{
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 255, 247, 0.02),
+    rgba(0,255,247,0.02) 1px,
+    transparent 2px,
+    transparent 4px
+  );
+  animation: scan 10s linear infinite;
+  mix-blend-mode: overlay;
+}
+@keyframes scan { from { transform: translateY(0); } to { transform: translateY(-100%); } }
+
+.app-container{ display:flex; height:100vh; position:relative; z-index:1; }
+
+/* Left status panel (terminal-like) */
+.sidebar{
+  width:max-content; padding:18px; color:var(--neon-cyan);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.12));
+  border-right: 1px solid rgba(0,255,247,0.06);
+  box-shadow: var(--panel-glow);
+  align-items: center;
+  margin: 18px auto; /* center sidebar horizontally within the chat area */
+  backdrop-filter: blur(6px);
+  
+}
+.sidebar .terminal-line{ font-size:13px; margin:8px 0; color:var(--neon-green);  }
+.sidebar .terminal-line small{ color:#9ff7e7; font-weight:400; margin-left:8px; }
+.peer-id{ color:var(--neon-cyan); font-weight:700; cursor:pointer; }
+.peer-id:hover{ text-decoration:underline; }
+
+.chat-wrap{ flex:1; display:flex; flex-direction:column; position:relative; }
+.chat-window{ display:flex; flex-direction:column; height:100%; flex:1; min-height:0; }
+
+/* Ensure message window can shrink/grow inside flexible parents */
+.message-window{ flex:1 1 auto; min-height:0; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; scroll-behavior:smooth; }
+.message-window::-webkit-scrollbar{ width:10px; }
+.message-window::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, rgba(0,255,247,0.12), rgba(20,255,0,0.08)); border-radius:8px; }
+
+/* Header / PeerConnector styling */
+.peer-connector{ padding:12px 18px; display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; border-bottom:1px solid rgba(0,255,247,0.04); background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.15)); }
+.peer-connector .your-id{ color:var(--neon-cyan); font-weight:700; display:block; }
+.peer-connector .your-id strong{ color:var(--neon-green); font-weight:800; text-shadow:0 0 8px rgba(20,255,0,0.12); }
+.peer-connector .friend-id{ flex:1 1 420px; display:flex; flex-direction:column; gap:8px; }
+.peer-connector input[type="text"]{ background: rgba(0,0,0,0.55); border:1px solid rgba(0,255,247,0.04); color:var(--text); padding:8px; border-radius:6px; }
+.peer-connector button{ font-family:var(--mono); }
+
+/* small connect pulse on status */
+.status-dot.connected{ box-shadow: 0 0 12px rgba(20,255,0,0.28); transform: scale(1.03); }
+
+.chat-header{ padding:12px 18px; display:flex; align-items:center; justify-content:center; text-align:center; border-bottom:1px solid rgba(0,255,247,0.04); }
+.status-pill{ color:var(--neon-cyan); font-size:13px; display:flex; gap:8px; align-items:center; justify-content:center; width:100%; }
+.status-dot{ width:10px; height:10px; border-radius:999px; background:var(--neon-green); box-shadow:0 0 8px var(--neon-green); }
+
+.message-window{ overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; scroll-behavior:smooth; }
+
+.msg-row{ display:flex; gap:12px; align-items:flex-end; }
+.msg-row.me{ justify-content:flex-end; }
+.avatar{ width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#001; background: linear-gradient(90deg,var(--neon-cyan), var(--neon-green)); box-shadow: 0 0 12px #00fff733; font-weight:700; }
+
+.bubble{ max-width:70%; padding:14px 16px; border-radius:12px; color:var(--text); font-size:13px; line-height:1.25; word-break:break-word; position:relative; border:1px solid transparent; }
+.me .bubble{ background: linear-gradient(180deg, rgba(20,255,0,0.06), rgba(20,255,0,0.02)); border-color: rgba(20,255,0,0.18); box-shadow: 0 0 18px rgba(20,255,0,0.08), inset 0 0 8px rgba(20,255,0,0.02); }
+.them .bubble{ background: linear-gradient(180deg, rgba(0,255,247,0.04), rgba(0,255,247,0.02)); border-color: rgba(0,255,247,0.14); box-shadow: 0 0 18px rgba(0,255,247,0.06), inset 0 0 6px rgba(0,255,247,0.02); }
+
+/* neon edge and small flicker */
+.bubble::after{ content: ""; position:absolute; inset:-1px; border-radius:14px; pointer-events:none; box-shadow: 0 0 10px rgba(0,255,247,0.06); opacity:0.6; }
+
+/* message entry animation */
+@keyframes fadeInScale { from { opacity:0; transform: scale(0.96) translateY(6px); filter:blur(1px); } to { opacity:1; transform: none; filter: none; } }
+.bubble{ animation: fadeInScale .28s cubic-bezier(.2,.9,.2,1) both; }
+
+.file-preview{ display:flex; gap:12px; align-items:center; }
+.file-thumb{ width:88px; height:64px; border-radius:8px; background: rgba(255,255,255,0.02); overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid rgba(0,255,247,0.04); }
+.file-meta{ display:flex; flex-direction:column; gap:6px; }
+.file-name{ font-weight:700; color:var(--neon-green); font-size:13px; }
+.file-actions .btn{ padding:6px 10px; }
+
+.btn{ background:transparent; border:1px solid rgba(0,255,247,0.22); color:var(--neon-cyan); padding:8px 12px; border-radius:8px; cursor:pointer; font-size:13px; text-transform:uppercase; transition: all .18s ease; }
+.btn:hover{ background: rgba(0,255,247,0.03); box-shadow: 0 0 10px rgba(0,255,247,0.08); transform: translateY(-1px); }
+.btn.primary{ 
+  background: linear-gradient(90deg, var(--neon-green), var(--neon-cyan));
+  border: 1px solid rgba(0,255,247,0.28);
+  color: #001;
+  padding: 10px 14px;
+  box-shadow: 0 8px 28px rgba(0,255,247,0.10);
+  transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+}
+.btn.primary:hover{ transform: translateY(-2px); box-shadow: 0 14px 36px rgba(0,255,247,0.18); opacity: 0.98; }
+
+.composer{ padding:14px 18px; border-top:1px solid rgba(0,255,247,0.04); display:flex; gap:12px; align-items:center; backdrop-filter: blur(6px); }
+.composer .input{ flex:1; background: rgba(0,0,0,0.6); border-radius:10px; padding:10px 12px; color:var(--text); border:1px solid rgba(0,255,247,0.06); outline: none; }
+.composer .input:focus{ box-shadow: 0 0 14px rgba(0,255,247,0.06); animation: flicker .9s linear infinite; }
+
+@keyframes flicker {
+  0% { opacity: .98 }
+  2% { opacity: .9 }
+  8% { opacity: .98 }
+  100% { opacity: .98 }
+}
+
+.attach-btn{ width:46px; height:46px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; background:linear-gradient(90deg, rgba(0,255,247,0.03), rgba(20,255,0,0.02)); border:1px solid rgba(0,255,247,0.08); cursor:pointer; }
+.progress{ height:6px; background:rgba(255,255,255,0.02); border-radius:6px; overflow:hidden; }
+.progress > i{ display:block; height:100%; background:linear-gradient(90deg,var(--neon-green),var(--neon-cyan)); width:0%; transition: width .35s ease; }
+
+.ts{ font-size:11px; color: rgba(189,252,255,0.8); margin-left:8px; opacity:0.9; }
+
+/* responsive tweaks */
+@media(max-width:900px){ .sidebar{ display:none; } .bubble{ max-width:86%; } }
+
+/* Tiny utilities for session terminated state */
+.session-terminated{ animation: sessionFlash 1.2s ease both; }
+@keyframes sessionFlash { 0%{ box-shadow:0 0 0 rgba(255,0,0,0) } 50%{ box-shadow:0 0 18px rgba(255,0,0,0.35) } 100%{ box-shadow:0 0 0 rgba(255,0,0,0) } }
+
+/* Centered login container (glass/neon panel) */
+.login-container{
+  max-width:420px;
+  width:100%;
+  margin:32px auto;
+  padding:20px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.18));
+  border-radius: var(--radius);
+  box-shadow: var(--panel-glow);
+  border:1px solid rgba(0,255,247,0.04);
+  backdrop-filter: blur(8px);
+  text-align:center;
+}
+.login-container .title{ font-size:28px; color:var(--neon-cyan); margin-bottom:10px; letter-spacing:1px; }
+.login-container form{ display:flex; flex-direction:column; gap:10px; }
+.login-container input[type="text"],
+.login-container input[type="password"]{ padding:10px; border-radius:8px; border:1px solid rgba(0,255,247,0.04); background: rgba(0,0,0,0.55); color:var(--text); }
+.login-container .actions{ display:flex; gap:10px; justify-content:center; margin-top:8px; }
+
+@media(max-width:600px){ .login-container{ margin:18px 16px; } }
+
+/* Logo sizing and branding */
+.logo{ width:120px; height:auto; display:block; margin:0 auto 10px; filter: drop-shadow(0 0 12px rgba(0,255,247,0.14)); }
+.logo.small{ width:44px; height:44px; margin:0; }
+.chat-header .brand{ display:flex; align-items:center; gap:12px; color:var(--neon-cyan); font-weight:700; font-size:18px; }
+.chat-header .brand strong{ color:var(--neon-green); font-weight:900; font-size:22px; text-shadow:0 0 12px rgba(20,255,0,0.12); }
+
+/* Pin chat header to top of the chat window so it doesn't sit vertically centered */
+.chat-window .chat-header{
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  backdrop-filter: blur(6px);
+  background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.15));
+}
+
+/* small connected info inside peer-connector */
+.peer-connector .connected-info{ font-size:13px; color:var(--neon-cyan); padding:8px 6px; border-top:1px solid rgba(0,255,247,0.04); }
+
+/* Responsive tweaks for logo and header sizes */
+@media(max-width:900px){
+  .logo{ width:96px; }
+  .logo.small{ width:36px; height:36px; }
+  .chat-header .brand strong{ font-size:20px; }
+}
+@media(max-width:600px){
+  .login-container .title{ font-size:20px; }
+  .logo{ width:76px; }
+  .chat-header .brand strong{ font-size:18px; }
+}
+

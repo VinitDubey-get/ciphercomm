@@ -4,7 +4,7 @@ body {
   color: #c9d1d9;
   font-family: 'Courier New', Courier, monospace;
   margin: 0;
-  padding: 20px;
+  padding: 0; /* removed global padding so header aligns to top */
 }
 
 input, button {
@@ -31,8 +31,8 @@ input {
 
 /* --- App Layout --- */
 .app-container {
-  max-width: 800px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100vh;
 }
 
 /* --- Login Screen --- */

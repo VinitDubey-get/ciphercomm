@@ -2,6 +2,7 @@ import React,{useEffect} from 'react'
 import PeerConnector from './PeerConnector'
 import MessageInput from './MessageInput'
 import MessageWindow from './MessageWindow'
+import logo from '../assets/logo.svg'
 
 import { useWeb3 } from '../context/Web3context'
 import * as ethCrypto from 'eth-crypto'
@@ -10,7 +11,12 @@ import {Peer} from 'peerjs'
 import { ethers } from 'ethers'
 
 const Chat = () => {
-  const {signer,setWeb3Data}=useWeb3();
+  const {signer,setWeb3Data, conn, friendWallet, address }=useWeb3();
+
+  const shortAddr = (a) => {
+    if(!a) return '';
+    return a.length > 12 ? `${a.slice(0,6)}...${a.slice(-4)}` : a;
+  };
 
   useEffect(()=>{
     const initialize=async()=>{
@@ -59,10 +65,31 @@ const Chat = () => {
     initialize();
   },[signer]);
   return (
-    <div className='chat-window'>
-      <PeerConnector></PeerConnector>
-      <MessageWindow />
-      <MessageInput />
+    <div className='chat-wrap'>
+
+      <div className='chat-window'>
+        <div className="chat-header">
+          <div className="brand">
+            <img src={logo} alt="CipherComm" className="logo small" />
+            <strong>CipherComm</strong>
+          </div>
+          {/* show status-pill only when connected to a peer */}
+          {/* {conn && friendWallet && (
+            <div className="status-pill">
+              <span className="status-dot connected" />
+              <span>Connected to <span className="ts">{shortAddr(friendWallet)}</span></span>
+            </div>
+          )} */}
+        </div>
+
+        {/* Render PeerConnector directly below the header inside the chat window */}
+        <div className="peer-area">
+          <PeerConnector />
+        </div>
+
+        <MessageWindow />
+        <MessageInput />
+      </div>
     </div>
   )
 }
