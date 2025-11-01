@@ -22,15 +22,33 @@ const MessageWindow = () => {
       {(messages || []).map((msg) => (
         // Key should be unique - msg.id (Date.now()) should work
         <div key={msg.id} className={`message ${msg.sender}`}>
-          <p>
-            {msg.text}
-            
+          <div className="message-body">
+            {/* If this message contains a downloadable/decrypted file, show a preview + download link */}
+            {msg.isDownloadable && msg.dataUrl ? (
+              <div className="file-attachment">
+                {/* If it's an image data URL, show a small preview */}
+                {typeof msg.dataUrl === 'string' && msg.dataUrl.startsWith('data:image') ? (
+                  <div className="image-preview">
+                    <img src={msg.dataUrl} alt={msg.name || 'image'} style={{ maxWidth: '240px', maxHeight: '240px' }} />
+                  </div>
+                ) : null}
+
+                {/* Download link (works for data: and blob: URLs) */}
+                <div>
+                  <a href={msg.dataUrl} download={msg.name || 'file'}>
+                    {msg.name ? `Download: ${msg.name}` : 'Download file'}
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <p>{msg.text}</p>
+            )}
+
             {/* --- START: Day 8 Verification Display --- */}
             {/* Only show verification status for INCOMING messages */}
             {/* No per-message verification UI — verification occurs only when chat is finalized */}
             {/* --- END: Day 8 Verification Display --- */}
-
-          </p>
+          </div>
         </div>
       ))}
       <div ref={endOfMessagesRef} />

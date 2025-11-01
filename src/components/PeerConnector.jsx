@@ -5,10 +5,11 @@ import { ethers } from 'ethers';
 import { contractAdress, contractABI, peerRegistryAddress, peerRegistryABI } from '../config';
 import ethCrypto from 'eth-crypto';
 import { registerPeerId, getPeerIdWithFallback } from '../utils/peerOnchain';
+import { handleIncomingFile } from '../utils/fileTransfer.js';
 
 function PeerConnector() {
   // 2. Get the peer and peerId from our global bubble
-  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, chatFinalized, signer, provider, _readRegistry } = useWeb3();
+  const { peer, peerId, chatKeys, contract, setWeb3Data, messages, address, conn, chatFinalized, signer, provider, _readRegistry, pinata, uploadToIpfs } = useWeb3();
   const [friendId, setFriendId] = useState(''); // Local state for the input field
   const [status, setStatus] = useState('idle');
   const [resolvedByWallet, setResolvedByWallet] = useState('');
@@ -136,6 +137,14 @@ function PeerConnector() {
             ...prev,
             messages: [...prev.messages, newMessage],
           }));
+        }
+        else if (data.type === 'file') {
+          console.log('Received file pointer', data.payload);
+          try {
+            await handleIncomingFile(data.payload, chatKeys, setWeb3Data, { pinata, uploadToIpfs });
+          } catch (fileErr) {
+            console.error('Error handling incoming file:', fileErr);
+          }
         }
       } catch (e) {
         console.error('Decryption or verification error', e);

@@ -2,6 +2,78 @@ import React, {createContext,useContext,useState,useEffect} from 'react';
 import {ethers} from 'ethers';
 import { contractAdress,contractABI, peerRegistryAddress, peerRegistryABI } from '../config';
 
+import pinataSDK from '@pinata/sdk';
+
+// Pinata configuration: read from Vite env or hardcode for quick testing
+const PINATA_API_KEY = import.meta.env.VITE_PINATA_API_KEY || '';
+const PINATA_SECRET_API_KEY = import.meta.env.VITE_PINATA_SECRET_API_KEY || '';
+
+let pinataClient = null;
+let uploadToIpfsHelper = null;
+
+if (PINATA_API_KEY && PINATA_SECRET_API_KEY) {
+  try {
+    // attempt to initialize official SDK (may be Node-only in some builds)
+    pinataClient = pinataSDK(PINATA_API_KEY, PINATA_SECRET_API_KEY);
+    console.log('Pinata client configured');
+
+    // helper using SDK when available
+    if (pinataClient && typeof pinataClient.pinFileToIPFS === 'function') {
+      uploadToIpfsHelper = async (payload, filename) => {
+        // payload is expected to be a Blob or File in browser
+        // pinFileToIPFS in the SDK expects a stream/file; some SDK builds accept a stream
+        // We'll try to pass a Blob.stream() where available (browser)
+        const options = {
+          pinataMetadata: { name: filename || 'file' },
+        };
+        try {
+          if (payload && typeof payload.stream === 'function') {
+            // browser Blob/ File
+            const stream = payload.stream();
+            const result = await pinataClient.pinFileToIPFS(stream, options);
+            return result?.IpfsHash || result;
+          }
+        } catch (e) {
+          console.warn('pinataClient.pinFileToIPFS failed, will fallback to REST upload', e);
+        }
+        // fallback to REST path below
+        throw new Error('SDK upload not available');
+      };
+    }
+  } catch (e) {
+    console.warn('Pinata SDK init failed (will use REST fallback):', e);
+    pinataClient = null;
+  }
+}
+
+// REST fallback using Pinata HTTP API (will expose keys to the browser - beware)
+if (!uploadToIpfsHelper && PINATA_API_KEY && PINATA_SECRET_API_KEY) {
+  uploadToIpfsHelper = async (payload, filename) => {
+    const form = new FormData();
+    const blob = (payload instanceof Blob || payload instanceof File) ? payload : new Blob([payload], { type: 'application/octet-stream' });
+    form.append('file', blob, filename || 'file');
+
+    // optional metadata/opts
+    const metadata = { name: filename || 'file' };
+    form.append('pinataMetadata', JSON.stringify(metadata));
+
+    const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+      method: 'POST',
+      headers: {
+        // Pinata supports API key/secret via headers
+        pinata_api_key: PINATA_API_KEY,
+        pinata_secret_api_key: PINATA_SECRET_API_KEY,
+      },
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error('Pinata upload failed: ' + res.status + ' ' + res.statusText + ' ' + text);
+    }
+    const j = await res.json();
+    return j?.IpfsHash || j?.ipfs_hash || j;
+  };
+}
 
 // creating the context 
 // this is what components will use to find the bubble
@@ -26,6 +98,8 @@ export function Web3Provider({children}){
       _readRegistry: null,
       providerForReadonly: null,
       chatFinalized: null, // { hash, txHash, confirmedBy: [addresses] }
+      pinata: pinataClient,
+      uploadToIpfs: uploadToIpfsHelper,
     });
      
   
@@ -138,6 +212,17 @@ export function Web3Provider({children}){
         if (typeof window !== 'undefined') {
           // expose ethers for console convenience
           window.ethers = ethers;
+          // expose Pinata client and upload helper for interactive testing
+          window.__PINATA_CLIENT__ = web3Data.pinata || pinataClient || null;
+          window.__uploadToIpfs__ = web3Data.uploadToIpfs || uploadToIpfsHelper || null;
+          window.__testPinata = async () => {
+            const up = window.__uploadToIpfs__;
+            if (!up) return console.warn('No uploadToIpfs helper available (Pinata missing)');
+            try {
+              const cid = await up(new Blob([`pinata test ${Date.now()}`], { type: 'text/plain' }), 'pinata_test.txt');
+              console.log('uploadToIpfs result CID:', cid);
+            } catch (e) { console.error('uploadToIpfs failed', e); }
+          };
           // expose registry ABI/address for manual inspection
           window.__PEER_REGISTRY_ABI__ = peerRegistryABI;
           window.__PEER_REGISTRY_ADDRESS__ = peerRegistryAddress;
